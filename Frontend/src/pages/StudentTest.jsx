@@ -21,6 +21,7 @@ function StudentTest() {
     const [selectedAnswers, setSelectedAnswers] = useState({});
     const [testSubmitted, setTestSubmitted] = useState(false);
     const [testResult, setTestResult] = useState(null);
+    const [startTime, setStartTime] = useState(null);
 
     const [error, setError] = useState('');
 
@@ -80,6 +81,7 @@ function StudentTest() {
                 setSelectedAnswers({});
                 setTestSubmitted(false);
                 setTestResult(null);
+                setStartTime(Date.now()); // Start timer
             } else {
                 throw new Error('Invalid test data received');
             }
@@ -103,6 +105,9 @@ function StudentTest() {
         try {
             setSubmitting(true);
             setError('');
+            
+            const endTime = Date.now();
+            const timeSpentSeconds = Math.round((endTime - startTime) / 1000);
 
             // Update questions with student answers and check correctness
             const evaluatedQuestions = testQuestions.map(q => ({
@@ -116,17 +121,20 @@ function StudentTest() {
             const scorePercentage = Math.round((correctCount / evaluatedQuestions.length) * 100);
 
             let levelEvaluated = currentLevel;
+            let weakAreas = [];
 
             // If diagnostic test, evaluate level
             if (!diagnosticCompleted) {
                 const evaluation = await evaluateStudentLevel(evaluatedQuestions, scorePercentage);
                 levelEvaluated = evaluation.level;
+                weakAreas = evaluation.weakAreas || [];
 
                 // Update user profile
                 const userDocRef = doc(db, 'users', currentUser.uid);
                 await updateDoc(userDocRef, {
                     level: levelEvaluated,
-                    diagnosticCompleted: true
+                    diagnosticCompleted: true,
+                    weakAreas: weakAreas
                 });
 
                 setDiagnosticCompleted(true);
@@ -148,6 +156,8 @@ function StudentTest() {
                 correctAnswers: correctCount,
                 totalQuestions: evaluatedQuestions.length,
                 levelEvaluated: levelEvaluated,
+                timeSpentSeconds: timeSpentSeconds,
+                weakAreas: weakAreas,
                 createdAt: serverTimestamp()
             };
 
@@ -159,7 +169,8 @@ function StudentTest() {
                 correctCount,
                 totalQuestions: evaluatedQuestions.length,
                 level: levelEvaluated,
-                isDiagnostic: !diagnosticCompleted
+                isDiagnostic: !diagnosticCompleted,
+                timeSpent: timeSpentSeconds
             });
 
             setTestQuestions(evaluatedQuestions);
@@ -194,48 +205,45 @@ function StudentTest() {
 
     if (loading) {
         return (
-            <div style={{ padding: '20px' }}>
+            <div className="container" style={{ padding: '2rem' }}>
                 <p>Loading...</p>
             </div>
         );
     }
 
     return (
-        <div style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h1>Test Area</h1>
-                <div>
-                    <button
-                        onClick={handleBackToDashboard}
-                        style={{ padding: '10px 20px', cursor: 'pointer', marginRight: '10px' }}
-                    >
-                        Back to Dashboard
+        <div className="container" style={{ padding: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <h1 style={{ color: 'var(--color-primary)' }}>Test Area</h1>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button onClick={handleBackToDashboard} className="btn btn-outline">
+                        Dashboard
                     </button>
-                    <button onClick={handleLogout} style={{ padding: '10px 20px', cursor: 'pointer' }}>
+                    <button onClick={handleLogout} className="btn btn-outline">
                         Logout
                     </button>
                 </div>
             </div>
 
             {error && (
-                <div style={{ background: '#ffebee', padding: '15px', borderRadius: '8px', marginBottom: '20px', color: '#c62828' }}>
+                <div style={{ background: '#ffebee', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', color: '#c62828' }}>
                     {error}
                 </div>
             )}
 
             {!diagnosticCompleted && testQuestions.length === 0 && (
-                <div style={{ background: '#e3f2fd', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-                    <h3>Welcome to Your First Test!</h3>
-                    <p>This diagnostic test will help us understand your current knowledge level.</p>
-                    <p>The test contains 10 multiple-choice questions covering various topics.</p>
+                <div className="card" style={{ marginBottom: '2rem' }}>
+                    <h3 style={{ marginBottom: '1rem' }}>Welcome to Your First Test!</h3>
+                    <p style={{ marginBottom: '0.5rem' }}>This diagnostic test will help us understand your current knowledge level.</p>
+                    <p style={{ marginBottom: '1.5rem' }}>The test contains 10 multiple-choice questions covering various topics.</p>
                     <p><strong>Click "Generate Test" to begin.</strong></p>
                 </div>
             )}
 
             {diagnosticCompleted && testQuestions.length === 0 && !testSubmitted && (
-                <div style={{ background: '#f5f5f5', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-                    <h3>Ready for a New Test?</h3>
-                    <p>Current Level: <strong>{currentLevel}</strong></p>
+                <div className="card" style={{ marginBottom: '2rem' }}>
+                    <h3 style={{ marginBottom: '1rem' }}>Ready for a New Test?</h3>
+                    <p style={{ marginBottom: '0.5rem' }}>Current Level: <strong>{currentLevel}</strong></p>
                     <p>This test will be tailored to your {currentLevel} level.</p>
                 </div>
             )}
@@ -244,15 +252,8 @@ function StudentTest() {
                 <button
                     onClick={handleGenerateTest}
                     disabled={generating}
-                    style={{
-                        padding: '12px 24px',
-                        fontSize: '16px',
-                        cursor: generating ? 'not-allowed' : 'pointer',
-                        backgroundColor: '#646cff',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px'
-                    }}
+                    className="btn btn-primary"
+                    style={{ fontSize: '1.1rem', padding: '0.875rem 2rem' }}
                 >
                     {generating ? 'Generating Test...' : 'Generate Test'}
                 </button>
@@ -260,105 +261,103 @@ function StudentTest() {
 
             {testQuestions.length > 0 && !testSubmitted && (
                 <div>
-                    <div style={{ marginBottom: '20px' }}>
-                        <h3>{!diagnosticCompleted ? 'Diagnostic Test' : `${currentLevel} Level Test`}</h3>
-                        <p>Total Questions: {testQuestions.length}</p>
+                    <div style={{ marginBottom: '2rem' }}>
+                        <h3 style={{ marginBottom: '0.5rem' }}>{!diagnosticCompleted ? 'Diagnostic Test' : `${currentLevel} Level Test`}</h3>
+                        <p style={{ color: 'var(--color-text-secondary)' }}>Total Questions: {testQuestions.length}</p>
                     </div>
 
                     {testQuestions.map((q, index) => (
-                        <div key={q.id} style={{ background: '#f5f5f5', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-                            <h4>Question {index + 1}</h4>
-                            <p style={{ fontSize: '16px', marginBottom: '15px' }}>{q.question}</p>
+                        <div key={q.id} className="card" style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ marginBottom: '1rem' }}>Question {index + 1}</h4>
+                            <p style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>{q.question}</p>
 
-                            {q.options.map((option, optIndex) => (
-                                <div key={optIndex} style={{ marginBottom: '10px' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                {q.options.map((option, optIndex) => (
+                                    <label 
+                                        key={optIndex} 
+                                        style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            padding: '1rem', 
+                                            borderRadius: 'var(--radius-md)',
+                                            background: selectedAnswers[q.id] === option ? 'rgba(37, 99, 235, 0.1)' : 'var(--color-surface)',
+                                            border: selectedAnswers[q.id] === option ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                    >
                                         <input
                                             type="radio"
                                             name={`question-${q.id}`}
                                             value={option}
                                             checked={selectedAnswers[q.id] === option}
                                             onChange={() => handleAnswerSelect(q.id, option)}
-                                            style={{ marginRight: '10px' }}
+                                            style={{ marginRight: '1rem' }}
                                         />
-                                        <span>{option}</span>
+                                        {option}
                                     </label>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     ))}
 
                     <button
                         onClick={handleSubmitTest}
                         disabled={submitting || Object.keys(selectedAnswers).length !== testQuestions.length}
-                        style={{
-                            padding: '12px 24px',
-                            fontSize: '16px',
-                            cursor: (submitting || Object.keys(selectedAnswers).length !== testQuestions.length) ? 'not-allowed' : 'pointer',
-                            backgroundColor: '#646cff',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px'
-                        }}
+                        className="btn btn-primary"
+                        style={{ width: '100%', padding: '1rem', fontSize: '1.1rem' }}
                     >
                         {submitting ? 'Submitting...' : 'Submit Test'}
                     </button>
-
-                    {Object.keys(selectedAnswers).length !== testQuestions.length && (
-                        <p style={{ marginTop: '10px', color: '#666' }}>
-                            Please answer all questions before submitting ({Object.keys(selectedAnswers).length}/{testQuestions.length} answered)
-                        </p>
-                    )}
                 </div>
             )}
 
             {testSubmitted && testResult && (
-                <div>
-                    <div style={{ background: '#e8f5e9', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-                        <h2>Test Completed!</h2>
-                        <p><strong>Score:</strong> {testResult.score}% ({testResult.correctCount}/{testResult.totalQuestions})</p>
-                        {testResult.isDiagnostic && (
-                            <p><strong>Your Level:</strong> {testResult.level}</p>
-                        )}
+                <div className="card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+                    <h2 style={{ marginBottom: '2rem', color: 'var(--color-primary)' }}>Test Results</h2>
+                    
+                    <div style={{ 
+                        display: 'inline-flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'center', 
+                        padding: '2rem', 
+                        background: 'var(--color-surface-hover)', 
+                        borderRadius: 'var(--radius-lg)',
+                        marginBottom: '2rem'
+                    }}>
+                        <div style={{ fontSize: '4rem', fontWeight: 'bold', color: 'var(--color-primary)', lineHeight: 1 }}>
+                            {testResult.score}%
+                        </div>
+                        <div style={{ color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>
+                            {testResult.correctCount} out of {testResult.totalQuestions} correct
+                        </div>
                     </div>
 
-                    <div style={{ marginBottom: '20px' }}>
-                        <h3>Review Your Answers</h3>
-                        {testQuestions.map((q, index) => (
-                            <div
-                                key={q.id}
-                                style={{
-                                    background: q.isCorrect ? '#e8f5e9' : '#ffebee',
-                                    padding: '20px',
-                                    borderRadius: '8px',
-                                    marginBottom: '15px'
-                                }}
-                            >
-                                <h4>Question {index + 1}</h4>
-                                <p style={{ fontSize: '16px', marginBottom: '10px' }}>{q.question}</p>
-                                <p><strong>Your Answer:</strong> {q.studentAnswer || 'Not answered'}</p>
-                                <p><strong>Correct Answer:</strong> {q.correctAnswer}</p>
-                                <p style={{ fontWeight: 'bold', color: q.isCorrect ? '#2e7d32' : '#c62828' }}>
-                                    {q.isCorrect ? '✓ Correct' : '✗ Incorrect'}
-                                </p>
-                            </div>
-                        ))}
+                    <div style={{ display: 'grid', gap: '1rem', maxWidth: '400px', margin: '0 auto 2rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+                            <span>Level Assessed:</span>
+                            <strong>{testResult.level}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+                            <span>Time Taken:</span>
+                            <strong>{Math.floor(testResult.timeSpent / 60)}m {testResult.timeSpent % 60}s</strong>
+                        </div>
                     </div>
 
-                    <button
-                        onClick={handleStartNewTest}
-                        style={{
-                            padding: '12px 24px',
-                            fontSize: '16px',
-                            cursor: 'pointer',
-                            backgroundColor: '#646cff',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px'
-                        }}
-                    >
-                        Start New Test
-                    </button>
+                    <p style={{ marginBottom: '2rem' }}>
+                        {testResult.isDiagnostic 
+                            ? "Great job! We've analyzed your results and set your starting level." 
+                            : "Test completed successfully. Keep practicing to improve your skills!"}
+                    </p>
+
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                        <button onClick={handleStartNewTest} className="btn btn-outline">
+                            Take Another Test
+                        </button>
+                        <button onClick={handleBackToDashboard} className="btn btn-primary">
+                            Back to Dashboard
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

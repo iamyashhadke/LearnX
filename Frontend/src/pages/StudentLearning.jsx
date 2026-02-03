@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
 import { useAuth } from '../components/AuthContext';
 import { getStudentProgress, updateLessonStatus, saveTestAttempt } from '../utils/firestoreService';
-import { generateLessonTest } from '../utils/gemini';
+import { generateLessonTest, generateLearningPath } from '../utils/gemini';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 function StudentLearning() {
     const { currentUser, userData } = useAuth();
@@ -20,6 +21,7 @@ function StudentLearning() {
     const [testSubmitted, setTestSubmitted] = useState(false);
     const [testResult, setTestResult] = useState(null);
     const [generatingTest, setGeneratingTest] = useState(false);
+    const [generatingPath, setGeneratingPath] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -34,17 +36,66 @@ function StudentLearning() {
             const progressData = await getStudentProgress(currentUser.uid);
 
             if (!progressData || !progressData.lessons || progressData.lessons.length === 0) {
-                setError('No learning path found. Please take the mock test first.');
-                setLoading(false);
-                return;
+                // Keep progress null to trigger "Generate Learning Path" view
+                setProgress(null);
+            } else {
+                setProgress(progressData);
             }
-
-            setProgress(progressData);
             setLoading(false);
         } catch (err) {
             console.error('Error loading progress:', err);
             setError('Failed to load learning path');
             setLoading(false);
+        }
+    };
+
+    const handleGeneratePath = async () => {
+        try {
+            setGeneratingPath(true);
+            setError('');
+
+            // Fetch user profile for level and weak areas
+            const userDocRef = doc(db, 'users', currentUser.uid);
+            const userDocSnap = await getDoc(userDocRef);
+            let level = 'beginner';
+            let weakAreas = [];
+
+            if (userDocSnap.exists()) {
+                const data = userDocSnap.data();
+                level = data.level || 'beginner';
+                weakAreas = data.weakAreas || [];
+            }
+
+            // Generate path using Gemini
+            const pathData = await generateLearningPath(level, weakAreas);
+
+            // Save to Firestore
+            const learningPathData = {
+                userId: currentUser.uid,
+                currentLevel: level,
+                subject: pathData.subject,
+                lessons: pathData.lessons.map(lesson => ({
+                    ...lesson,
+                    completed: false,
+                    contentViewed: false,
+                    testPassed: false,
+                    testScore: null
+                })),
+                progressPercentage: 0,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+
+            // Save to Firestore under users collection
+            await setDoc(doc(db, 'users', currentUser.uid, 'student_progress', 'main'), learningPathData);
+            
+            // Reload progress
+            await loadProgress();
+            setGeneratingPath(false);
+        } catch (err) {
+            console.error('Error generating learning path:', err);
+            setError('Failed to generate learning path. Please try again.');
+            setGeneratingPath(false);
         }
     };
 
@@ -160,7 +211,7 @@ function StudentLearning() {
             // Save test attempt
             await saveTestAttempt({
                 userId: currentUser.uid,
-                subject: "Python",
+                subject: "Python", // Or dynamic subject
                 level: progress.currentLevel,
                 type: "lesson",
                 lessonId: selectedLesson.lessonId,
@@ -221,14 +272,24 @@ function StudentLearning() {
         );
     }
 
-    if (error && !progress) {
+    if (!progress) {
         return (
             <div className="container" style={{ padding: '2rem' }}>
-                <div className="card">
-                    <h2 style={{ color: 'var(--color-error)', marginBottom: '1rem' }}>No Learning Path Found</h2>
-                    <p style={{ marginBottom: '1.5rem' }}>{error}</p>
-                    <button onClick={() => navigate('/student/mock-test')} className="btn btn-primary">
-                        Take Mock Test
+                <div className="card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+                    <h2 style={{ color: 'var(--color-primary)', marginBottom: '1rem' }}>Start Your Learning Journey</h2>
+                    <p style={{ marginBottom: '2rem', color: 'var(--color-text-secondary)' }}>
+                        We'll analyze your profile and create a personalized learning path just for you.
+                    </p>
+                    
+                    {error && <p style={{ color: 'var(--color-error)', marginBottom: '1rem' }}>{error}</p>}
+                    
+                    <button 
+                        onClick={handleGeneratePath} 
+                        className="btn btn-primary"
+                        disabled={generatingPath}
+                        style={{ fontSize: '1.1rem', padding: '0.875rem 2rem' }}
+                    >
+                        {generatingPath ? 'Generating Path...' : 'Generate Learning Path'}
                     </button>
                 </div>
             </div>
@@ -240,7 +301,7 @@ function StudentLearning() {
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <div>
-                    <h1 style={{ color: 'var(--color-primary)', marginBottom: '0.5rem' }}>Python Learning Path</h1>
+                    <h1 style={{ color: 'var(--color-primary)', marginBottom: '0.5rem' }}>{progress.subject || 'My Learning Path'}</h1>
                     <p style={{ color: 'var(--color-text-secondary)' }}>
                         Level: <strong>{progress?.currentLevel?.toUpperCase()}</strong> |
                         Progress: <strong>{progress?.progressPercentage || 0}%</strong>
@@ -283,8 +344,9 @@ function StudentLearning() {
                                     className="card"
                                     style={{
                                         opacity: isLocked ? 0.6 : 1,
-                                        border: lesson.completed ? '2px solid #4caf50' : '1px solid var(--color-border)',
-                                        position: 'relative'
+                                        border: lesson.completed ? '2px solid var(--color-success)' : '1px solid var(--color-border)',
+                                        position: 'relative',
+                                        transition: 'transform 0.2s ease, box-shadow 0.2s ease'
                                     }}
                                 >
                                     {isLocked && (
@@ -292,14 +354,14 @@ function StudentLearning() {
                                             position: 'absolute',
                                             top: '1rem',
                                             right: '1rem',
-                                            background: '#ff9800',
+                                            background: 'var(--color-warning)',
                                             color: 'white',
                                             padding: '0.25rem 0.75rem',
                                             borderRadius: '12px',
                                             fontSize: '0.75rem',
-                                            fontWeight: '600'
+                                            fontWeight: 'bold'
                                         }}>
-                                            🔒 LOCKED
+                                            LOCKED
                                         </div>
                                     )}
 
@@ -308,235 +370,159 @@ function StudentLearning() {
                                             position: 'absolute',
                                             top: '1rem',
                                             right: '1rem',
-                                            background: '#4caf50',
+                                            background: 'var(--color-success)',
                                             color: 'white',
                                             padding: '0.25rem 0.75rem',
                                             borderRadius: '12px',
                                             fontSize: '0.75rem',
-                                            fontWeight: '600'
+                                            fontWeight: 'bold'
                                         }}>
-                                            ✓ COMPLETED
+                                            COMPLETED
                                         </div>
                                     )}
 
-                                    <h4 style={{ marginBottom: '0.5rem', paddingRight: '6rem' }}>
-                                        Lesson {index + 1}: {lesson.title}
-                                    </h4>
-                                    <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
-                                        {lesson.description}
-                                    </p>
-
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem', fontSize: '0.875rem' }}>
-                                        <span style={{ color: lesson.contentViewed ? '#4caf50' : '#666' }}>
-                                            {lesson.contentViewed ? '✓' : '○'} Content Viewed
-                                        </span>
-                                        <span style={{ color: '#ddd' }}>|</span>
-                                        <span style={{ color: lesson.testPassed ? '#4caf50' : '#666' }}>
-                                            {lesson.testPassed ? '✓' : '○'} Test Passed
-                                            {lesson.testScore !== null && ` (${lesson.testScore}%)`}
-                                        </span>
+                                    <h3 style={{ marginBottom: '0.5rem', color: isLocked ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>
+                                        {index + 1}. {lesson.title}
+                                    </h3>
+                                    <p style={{ marginBottom: '1rem', color: 'var(--color-text-secondary)' }}>{lesson.description}</p>
+                                    
+                                    <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
+                                        <span>⏱ {lesson.estimatedDuration}</span>
+                                        <span>📊 {lesson.difficulty}</span>
                                     </div>
 
-                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                        <button
-                                            onClick={() => handleViewLesson(lesson)}
-                                            disabled={isLocked}
-                                            className="btn btn-secondary"
-                                            style={{ cursor: isLocked ? 'not-allowed' : 'pointer' }}
-                                        >
-                                            {lesson.contentViewed ? 'Review Content' : 'View Content'}
-                                        </button>
-
-                                        <button
-                                            onClick={() => handleStartLessonTest(lesson)}
-                                            disabled={isLocked || !lesson.contentViewed || generatingTest}
-                                            className="btn btn-primary"
-                                            style={{ cursor: (isLocked || !lesson.contentViewed || generatingTest) ? 'not-allowed' : 'pointer' }}
-                                        >
-                                            {generatingTest ? 'Generating...' : lesson.testPassed ? 'Retake Test' : 'Take Test'}
-                                        </button>
-                                    </div>
-
-                                    {isAccessible && !lesson.contentViewed && (
-                                        <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#ff9800' }}>
-                                            ⚠️ View the lesson content to unlock the test
-                                        </p>
+                                    {!isLocked && (
+                                        <div style={{ display: 'flex', gap: '1rem' }}>
+                                            <button
+                                                onClick={() => handleViewLesson(lesson)}
+                                                className="btn btn-outline"
+                                                style={{ fontSize: '0.875rem' }}
+                                            >
+                                                {lesson.contentViewed ? 'Review Content' : 'Start Lesson'}
+                                            </button>
+                                            
+                                            {lesson.contentViewed && (
+                                                <button
+                                                    onClick={() => handleStartLessonTest(lesson)}
+                                                    className="btn btn-primary"
+                                                    style={{ fontSize: '0.875rem' }}
+                                                    disabled={generatingTest}
+                                                >
+                                                    {lesson.completed ? 'Retake Test' : (generatingTest ? 'Generating...' : 'Take Test')}
+                                                </button>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             );
                         })}
                     </div>
-
-                    {/* Level Completion Section */}
-                    {progress.lessons.every(l => l.completed) && (
-                        <div className="card" style={{
-                            marginTop: '2rem',
-                            background: 'linear-gradient(to right, rgba(37, 99, 235, 0.1), rgba(168, 85, 247, 0.1))',
-                            border: '1px solid var(--color-primary)',
-                            textAlign: 'center',
-                            padding: '2rem'
-                        }}>
-                            <h2 style={{ color: 'var(--color-primary)', marginBottom: '1rem' }}>🎉 Level Completed!</h2>
-                            <p style={{ fontSize: '1.2rem', marginBottom: '1.5rem', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
-                                You have successfully completed all lessons in the <strong>{progress.currentLevel.toUpperCase()}</strong> level.
-                                It's time to take the next step!
-                            </p>
-                            <button
-                                onClick={() => navigate('/student/mock-test')}
-                                className="btn btn-primary"
-                                style={{ fontSize: '1.1rem', padding: '0.75rem 2rem' }}
-                            >
-                                Take Level Advancement Test
-                            </button>
-                        </div>
-                    )}
                 </div>
             )}
 
             {/* Lesson Content View */}
             {viewingContent && selectedLesson && (
-                <div>
+                <div className="card">
                     <button onClick={handleBackToLessons} className="btn btn-outline" style={{ marginBottom: '1rem' }}>
                         ← Back to Lessons
                     </button>
-
-                    <div className="card" style={{ marginBottom: '1.5rem' }}>
-                        <h2 style={{ marginBottom: '1rem' }}>{selectedLesson.title}</h2>
-                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
-                            {selectedLesson.description}
+                    
+                    <h2 style={{ marginBottom: '1rem', color: 'var(--color-primary)' }}>{selectedLesson.title}</h2>
+                    
+                    <div style={{ background: 'var(--color-surface-hover)', padding: '2rem', borderRadius: 'var(--radius-md)', marginBottom: '2rem' }}>
+                        <p style={{ fontSize: '1.1rem', lineHeight: '1.8' }}>
+                            {/* In a real app, this would be rich content from the database */}
+                            This is the detailed learning content for <strong>{selectedLesson.title}</strong>.
+                            <br /><br />
+                            Here you would learn about {selectedLesson.topics.join(', ')}.
+                            <br /><br />
+                            <em>(Content placeholder for demonstration)</em>
                         </p>
+                    </div>
 
-                        <div style={{
-                            background: '#f5f5f5',
-                            padding: '1.5rem',
-                            borderRadius: '8px',
-                            lineHeight: '1.8',
-                            whiteSpace: 'pre-wrap',
-                            fontFamily: 'monospace'
-                        }}>
-                            {selectedLesson.content}
-                        </div>
-
-                        {!selectedLesson.contentViewed && (
-                            <div style={{ marginTop: '1.5rem' }}>
-                                <button onClick={handleContentViewed} className="btn btn-primary">
-                                    Mark as Viewed & Unlock Test
-                                </button>
-                            </div>
-                        )}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button onClick={handleContentViewed} className="btn btn-primary">
+                            Mark as Viewed & Continue
+                        </button>
                     </div>
                 </div>
             )}
 
-            {/* Lesson Test View */}
-            {takingTest && !testSubmitted && (
-                <div>
-                    <button onClick={handleBackToLessons} className="btn btn-outline" style={{ marginBottom: '1rem' }}>
-                        ← Back to Lessons
+            {/* Test View */}
+            {takingTest && (
+                <div className="card">
+                     <button onClick={handleBackToLessons} className="btn btn-outline" style={{ marginBottom: '1rem' }}>
+                        ← Cancel Test
                     </button>
 
-                    <div className="card" style={{ marginBottom: '1.5rem' }}>
-                        <h2 style={{ marginBottom: '0.5rem' }}>Test: {selectedLesson.title}</h2>
-                        <p style={{ color: 'var(--color-text-secondary)' }}>
-                            Pass with ≥80% to complete this lesson. Questions: {Object.keys(selectedAnswers).length}/5 answered
-                        </p>
-                    </div>
+                    <h2 style={{ marginBottom: '1.5rem', color: 'var(--color-primary)' }}>Quiz: {selectedLesson.title}</h2>
 
-                    {testQuestions.map((q, index) => (
-                        <div key={q.id} className="card" style={{ marginBottom: '1rem' }}>
-                            <h4 style={{ marginBottom: '0.75rem' }}>Question {index + 1}</h4>
-                            <p style={{ marginBottom: '1rem', lineHeight: '1.6' }}>{q.question}</p>
-
-                            {q.options.map((option, optIndex) => (
-                                <div key={optIndex} style={{ marginBottom: '0.5rem' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '0.5rem', borderRadius: '6px' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-surface-hover)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name={`question-${q.id}`}
-                                            value={option}
-                                            checked={selectedAnswers[q.id] === option}
-                                            onChange={() => handleAnswerSelect(q.id, option)}
-                                            style={{ marginRight: '0.75rem' }}
-                                        />
-                                        <span>{option}</span>
-                                    </label>
+                    {!testSubmitted ? (
+                        <div>
+                            {testQuestions.map((q, index) => (
+                                <div key={q.id} style={{ marginBottom: '2rem', paddingBottom: '2rem', borderBottom: '1px solid var(--color-border)' }}>
+                                    <p style={{ fontWeight: '600', marginBottom: '1rem' }}>{index + 1}. {q.question}</p>
+                                    <div style={{ display: 'grid', gap: '0.5rem' }}>
+                                        {q.options.map((option, optIndex) => (
+                                            <label 
+                                                key={optIndex} 
+                                                style={{ 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    padding: '0.75rem', 
+                                                    borderRadius: 'var(--radius-sm)',
+                                                    background: selectedAnswers[q.id] === option ? 'rgba(37, 99, 235, 0.1)' : 'transparent',
+                                                    border: selectedAnswers[q.id] === option ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name={`question-${q.id}`}
+                                                    value={option}
+                                                    checked={selectedAnswers[q.id] === option}
+                                                    onChange={() => handleAnswerSelect(q.id, option)}
+                                                    style={{ marginRight: '10px' }}
+                                                />
+                                                {option}
+                                            </label>
+                                        ))}
+                                    </div>
                                 </div>
                             ))}
-                        </div>
-                    ))}
 
-                    <button
-                        onClick={handleSubmitLessonTest}
-                        disabled={Object.keys(selectedAnswers).length !== 5}
-                        className="btn btn-primary"
-                        style={{ cursor: Object.keys(selectedAnswers).length !== 5 ? 'not-allowed' : 'pointer' }}
-                    >
-                        Submit Test
-                    </button>
-                </div>
-            )}
-
-            {/* Test Results View */}
-            {testSubmitted && testResult && (
-                <div>
-                    <button onClick={handleBackToLessons} className="btn btn-outline" style={{ marginBottom: '1rem' }}>
-                        ← Back to Lessons
-                    </button>
-
-                    <div className="card" style={{
-                        marginBottom: '1.5rem',
-                        background: testResult.passed ? 'linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)' : 'linear-gradient(135deg, #f44336 0%, #c62828 100%)',
-                        color: 'white'
-                    }}>
-                        <h2 style={{ color: 'white', marginBottom: '1rem' }}>
-                            {testResult.passed ? '🎉 Test Passed!' : '😔 Test Not Passed'}
-                        </h2>
-                        <div style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '0.5rem' }}>
-                            {testResult.score}%
-                        </div>
-                        <p>{testResult.correctCount}/5 correct answers</p>
-                        {testResult.passed && (
-                            <p style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.2)', padding: '0.75rem', borderRadius: '6px' }}>
-                                ✓ Lesson completed! You can now proceed to the next lesson.
-                            </p>
-                        )}
-                        {!testResult.passed && (
-                            <p style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.2)', padding: '0.75rem', borderRadius: '6px' }}>
-                                You need at least 80% to pass. Review the content and try again.
-                            </p>
-                        )}
-                    </div>
-
-                    <div className="card" style={{ marginBottom: '1.5rem' }}>
-                        <h3 style={{ marginBottom: '1rem' }}>Review Answers</h3>
-                        {testQuestions.map((q, index) => (
-                            <div
-                                key={q.id}
-                                style={{
-                                    background: q.isCorrect ? '#e8f5e9' : '#ffebee',
-                                    padding: '1rem',
-                                    borderRadius: '6px',
-                                    marginBottom: '0.75rem'
-                                }}
+                            <button
+                                onClick={handleSubmitLessonTest}
+                                className="btn btn-primary"
+                                disabled={Object.keys(selectedAnswers).length !== testQuestions.length}
+                                style={{ width: '100%' }}
                             >
-                                <h4 style={{ marginBottom: '0.5rem' }}>Question {index + 1}</h4>
-                                <p style={{ marginBottom: '0.5rem' }}>{q.question}</p>
-                                <p><strong>Your Answer:</strong> {q.studentAnswer}</p>
-                                {!q.isCorrect && <p><strong>Correct:</strong> {q.correctAnswer}</p>}
-                                <p style={{ fontWeight: 'bold', color: q.isCorrect ? '#2e7d32' : '#c62828' }}>
-                                    {q.isCorrect ? '✓ Correct' : '✗ Incorrect'}
-                                </p>
+                                Submit Quiz
+                            </button>
+                        </div>
+                    ) : (
+                        <div style={{ textAlign: 'center', padding: '2rem' }}>
+                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+                                {testResult.passed ? '🎉' : '📚'}
                             </div>
-                        ))}
-                    </div>
-
-                    {!testResult.passed && (
-                        <button onClick={handleRetakeTest} className="btn btn-primary">
-                            Retake Test
-                        </button>
+                            <h3 style={{ marginBottom: '1rem', color: testResult.passed ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                                {testResult.passed ? 'Congratulations! You Passed!' : 'Keep Practicing!'}
+                            </h3>
+                            <p style={{ fontSize: '1.25rem', marginBottom: '2rem' }}>
+                                Score: <strong>{testResult.score}%</strong> ({testResult.correctCount}/{testResult.totalQuestions})
+                            </p>
+                            
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                <button onClick={handleBackToLessons} className="btn btn-outline">
+                                    Back to Lessons
+                                </button>
+                                {!testResult.passed && (
+                                    <button onClick={handleRetakeTest} className="btn btn-primary">
+                                        Retake Test
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     )}
                 </div>
             )}
@@ -545,4 +531,3 @@ function StudentLearning() {
 }
 
 export default StudentLearning;
-

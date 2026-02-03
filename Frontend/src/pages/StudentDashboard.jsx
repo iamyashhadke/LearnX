@@ -3,8 +3,8 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { useAuth } from '../components/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { getStudentProgress, getUserTestAttempts, getStudentAnalytics } from '../utils/firestoreService';
+import { doc, onSnapshot, collection, query, where, orderBy } from 'firebase/firestore';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 function StudentDashboard() {
     const { currentUser, userData } = useAuth();
@@ -14,99 +14,73 @@ function StudentDashboard() {
         level: null,
         diagnosticCompleted: false,
         totalTests: 0,
-        lastTestScore: null,
         averageScore: null,
-        mockTestsTaken: 0,
-        currentLevel: null,
-        completedLessons: 0,
-        totalLessons: 0,
-        progressPercentage: 0,
-        easyScore: null,
-        mediumScore: null,
-        advancedScore: null
+        recentTests: []
     });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (currentUser) {
-            fetchStudentStats();
-        }
-    }, [currentUser]);
+        if (!currentUser) return;
 
-    const fetchStudentStats = async () => {
-        try {
-            setLoading(true);
+        setLoading(true);
 
-            // Fetch user profile data
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            const userDocSnap = await getDoc(userDocRef);
-
-            let level = null;
-            let diagnosticCompleted = false;
-
-            if (userDocSnap.exists()) {
-                const data = userDocSnap.data();
-                level = data.level || null;
-                diagnosticCompleted = data.diagnosticCompleted || false;
+        // Real-time listener for user profile (level, diagnostic status)
+        const userUnsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setStats(prev => ({
+                    ...prev,
+                    level: data.level || null,
+                    diagnosticCompleted: data.diagnosticCompleted || false
+                }));
             }
+        }, (error) => {
+            console.error("Error listening to user profile:", error);
+        });
 
-            // Fetch student progress (new system)
-            const progress = await getStudentProgress(currentUser.uid);
-            const analytics = await getStudentAnalytics(currentUser.uid);
-            const testAttempts = await getUserTestAttempts(currentUser.uid, "Python");
+        // Real-time listener for tests
+        const testsQuery = query(
+            collection(db, 'tests'),
+            where('userId', '==', currentUser.uid),
+            orderBy('createdAt', 'asc')
+        );
 
-            // Fetch old test data for backward compatibility
-            const testsQuery = query(
-                collection(db, 'tests'),
-                where('userId', '==', currentUser.uid),
-                orderBy('createdAt', 'desc')
-            );
+        const testsUnsubscribe = onSnapshot(testsQuery, (snapshot) => {
+            const tests = [];
+            let totalScore = 0;
 
-            const testsSnapshot = await getDocs(testsQuery);
-            const oldTests = [];
-
-            testsSnapshot.forEach((doc) => {
-                oldTests.push(doc.data());
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                tests.push({
+                    ...data,
+                    date: data.createdAt?.toDate().toLocaleDateString() || 'N/A'
+                });
+                totalScore += data.score;
             });
 
-            // Calculate stats from new system
-            const mockTests = testAttempts.filter(t => t.type === 'mock');
-            const completedLessons = progress?.lessons?.filter(l => l.completed).length || 0;
-            const totalLessons = progress?.lessons?.length || 0;
+            const totalTests = tests.length;
+            const averageScore = totalTests > 0 ? Math.round(totalScore / totalTests) : 0;
 
-            // Combine old and new tests
-            const allTests = [...oldTests, ...testAttempts];
-            const totalTests = allTests.length;
-            const lastTestScore = allTests.length > 0 ? allTests[0].score : null;
-
-            let averageScore = null;
-            if (allTests.length > 0) {
-                const totalScore = allTests.reduce((sum, test) => sum + test.score, 0);
-                averageScore = Math.round(totalScore / allTests.length);
-            }
-
-            setStats({
-                level,
-                diagnosticCompleted,
+            setStats(prev => ({
+                ...prev,
                 totalTests,
-                lastTestScore,
                 averageScore,
-                mockTestsTaken: mockTests.length,
-                currentLevel: progress?.currentLevel || level,
-                completedLessons,
-                totalLessons,
-                progressPercentage: progress?.progressPercentage || 0,
-                easyScore: analytics?.easyScore,
-                mediumScore: analytics?.mediumScore,
-                advancedScore: analytics?.advancedScore
-            });
+                recentTests: tests
+            }));
+            
+            setLoading(false);
+        }, (error) => {
+            console.error("Error listening to tests:", error);
+            setLoading(false);
+        });
 
-            setLoading(false);
-        } catch (error) {
-            console.error('Error fetching student stats:', error);
-            setLoading(false);
-        }
-    };
+        // Cleanup listeners on unmount
+        return () => {
+            userUnsubscribe();
+            testsUnsubscribe();
+        };
+
+    }, [currentUser]);
 
     const handleLogout = async () => {
         try {
@@ -119,10 +93,6 @@ function StudentDashboard() {
 
     const startDiagnosticTest = () => {
         navigate('/student/test?type=diagnostic');
-    };
-
-    const startMockTest = () => {
-        navigate('/student/mock-test');
     };
 
     const startLearning = () => {
@@ -145,7 +115,7 @@ function StudentDashboard() {
                 <div style={{ textAlign: 'center', padding: '4rem' }}>Loading dashboard...</div>
             ) : (
                 <div style={{ display: 'grid', gap: '2rem', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-
+                    
                     {/* Profile Summary Card */}
                     <div className="card">
                         <h3 style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem', marginBottom: '1rem' }}>Profile Summary</h3>
@@ -176,97 +146,57 @@ function StudentDashboard() {
                                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tests Taken</div>
                             </div>
                             <div style={{ background: 'var(--color-surface-hover)', padding: '1rem', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                                <div style={{ fontSize: '2rem', fontWeight: '700', color: 'var(--color-secondary)' }}>{stats.averageScore !== null ? `${stats.averageScore}%` : '-'}</div>
+                                <div style={{ fontSize: '2rem', fontWeight: '700', color: 'var(--color-secondary)' }}>{stats.averageScore}%</div>
                                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Avg. Score</div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Learning Progress Card */}
-                    {stats.totalLessons > 0 && (
-                        <div className="card">
-                            <h3 style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem', marginBottom: '1rem' }}>Learning Progress</h3>
-                            <div style={{ marginBottom: '1rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                    <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>Overall Progress</span>
-                                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: '600', color: 'var(--color-primary)' }}>{stats.progressPercentage}%</span>
-                                </div>
-                                <div style={{ background: 'var(--color-surface-hover)', borderRadius: '8px', height: '8px', overflow: 'hidden' }}>
-                                    <div style={{ background: 'linear-gradient(90deg, var(--color-primary), var(--color-secondary))', height: '100%', width: `${stats.progressPercentage}%`, transition: 'width 0.3s' }}></div>
-                                </div>
+                    {/* Analytics Chart */}
+                    <div className="card" style={{ gridColumn: '1 / -1' }}>
+                        <h3 style={{ marginBottom: '1rem' }}>Performance History</h3>
+                        {stats.recentTests.length > 0 ? (
+                            <div style={{ height: '300px', width: '100%' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={stats.recentTests} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                                        <CartesianGrid stroke="#eee" strokeDasharray="5 5" />
+                                        <XAxis dataKey="date" />
+                                        <YAxis domain={[0, 100]} />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Line type="monotone" dataKey="score" stroke="var(--color-primary)" strokeWidth={2} activeDot={{ r: 8 }} name="Score (%)" />
+                                    </LineChart>
+                                </ResponsiveContainer>
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                <div>
-                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Completed Lessons</div>
-                                    <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--color-primary)' }}>{stats.completedLessons}/{stats.totalLessons}</div>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Mock Tests</div>
-                                    <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--color-secondary)' }}>{stats.mockTestsTaken}</div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Level-wise Performance Card */}
-                    {(stats.easyScore !== null || stats.mediumScore !== null || stats.advancedScore !== null) && (
-                        <div className="card">
-                            <h3 style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem', marginBottom: '1rem' }}>Level-wise Performance</h3>
-                            <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                {stats.easyScore !== null && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: '#e8f5e9', borderRadius: '6px' }}>
-                                        <span style={{ fontWeight: '600', color: '#2e7d32' }}>Easy Level</span>
-                                        <span style={{ fontSize: '1.25rem', fontWeight: '700', color: '#2e7d32' }}>{stats.easyScore}/5</span>
-                                    </div>
-                                )}
-                                {stats.mediumScore !== null && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: '#fff3e0', borderRadius: '6px' }}>
-                                        <span style={{ fontWeight: '600', color: '#e65100' }}>Medium Level</span>
-                                        <span style={{ fontSize: '1.25rem', fontWeight: '700', color: '#e65100' }}>{stats.mediumScore}/5</span>
-                                    </div>
-                                )}
-                                {stats.advancedScore !== null && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: '#fce4ec', borderRadius: '6px' }}>
-                                        <span style={{ fontWeight: '600', color: '#c2185b' }}>Advanced Level</span>
-                                        <span style={{ fontSize: '1.25rem', fontWeight: '700', color: '#c2185b' }}>{stats.advancedScore}/5</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                        ) : (
+                            <p style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>No test data available yet.</p>
+                        )}
+                    </div>
 
                     {/* Actions Card */}
                     <div className="card" style={{ gridColumn: '1 / -1' }}>
-                        <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
-
-                        {stats.totalLessons === 0 ? (
-                            <div style={{
-                                background: 'linear-gradient(to right, rgba(37, 99, 235, 0.1), rgba(5, 150, 105, 0.1))',
-                                padding: '1.5rem',
+                        <h3 style={{ marginBottom: '1rem' }}>Recommended Actions</h3>
+                        
+                        {!stats.diagnosticCompleted ? (
+                            <div style={{ 
+                                background: 'linear-gradient(to right, rgba(37, 99, 235, 0.1), rgba(5, 150, 105, 0.1))', 
+                                padding: '1.5rem', 
                                 borderRadius: 'var(--radius-md)',
                                 border: '1px solid var(--color-primary)'
                             }}>
-                                <h4 style={{ color: 'var(--color-primary)', marginBottom: '0.5rem' }}>Start Your Python Journey</h4>
-                                <p style={{ marginBottom: '1rem' }}>Take the mock test to determine your Python proficiency level and get a personalized learning path.</p>
-                                <button onClick={startMockTest} className="btn btn-primary">
-                                    Take Python Mock Test
+                                <h4 style={{ color: 'var(--color-primary)', marginBottom: '0.5rem' }}>Start Your Journey</h4>
+                                <p style={{ marginBottom: '1rem' }}>Take the diagnostic test to determine your current knowledge level and get a personalized learning path.</p>
+                                <button onClick={startDiagnosticTest} className="btn btn-primary">
+                                    Start Diagnostic Test
                                 </button>
                             </div>
                         ) : (
                             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                                 <button onClick={startLearning} className="btn btn-primary">
-                                    Continue Learning Path
+                                    Continue Learning
                                 </button>
-                                <button onClick={startMockTest} className="btn btn-secondary">
-                                    Take New Mock Test
-                                </button>
-                                {!stats.diagnosticCompleted && (
-                                    <button onClick={startDiagnosticTest} className="btn btn-outline">
-                                        Diagnostic Test
-                                    </button>
-                                )}
-                                <button onClick={() => navigate('/student/test')} className="btn btn-outline">
-                                    Practice Test
+                                <button onClick={() => navigate('/student/test')} className="btn btn-secondary">
+                                    Take Practice Test
                                 </button>
                             </div>
                         )}

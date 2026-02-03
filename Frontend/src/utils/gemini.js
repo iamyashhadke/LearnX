@@ -69,6 +69,64 @@ Make sure the JSON is valid and parseable.`;
 }
 
 /**
+ * Generate a personalized learning path based on student performance
+ * @param {string} level - Student's current level (beginner, intermediate, advanced)
+ * @param {Array} weakAreas - Array of topics where the student is weak
+ * @returns {Promise<Object>} - Learning path in JSON format
+ */
+export async function generateLearningPath(level, weakAreas = []) {
+  const prompt = `Create a personalized learning path for a "${level}" level student${weakAreas.length > 0 ? ` who is weak in: ${weakAreas.join(', ')}` : ''}.
+  
+  The path should consist of 5-7 lessons.
+  
+  Return ONLY a JSON object in this EXACT format with NO markdown:
+  
+  {
+    "subject": "General Knowledge & Logic",
+    "targetLevel": "${level}",
+    "lessons": [
+      {
+        "lessonId": "unique_id_1",
+        "title": "Lesson Title",
+        "description": "Brief description of what will be learned",
+        "difficulty": "easy|medium|hard",
+        "topics": ["topic1", "topic2"],
+        "estimatedDuration": "30 mins"
+      }
+    ]
+  }
+  
+  Prioritize topics based on the student's weaknesses if provided. Ensure lessons build upon each other.`;
+
+  return await generateWithGemini(prompt);
+}
+
+/**
+ * Generate a specific test for a lesson
+ * @param {string} lessonId - Lesson ID
+ * @param {string} lessonTitle - Lesson Title
+ * @param {string} level - Student Level
+ * @returns {Promise<Object>} - Test questions
+ */
+export async function generateLessonTest(lessonId, lessonTitle, level) {
+    const prompt = `Generate a short quiz (5 questions) for the lesson "${lessonTitle}" suitable for a "${level}" level student.
+  
+    Return ONLY a JSON object in this EXACT format with NO markdown:
+  
+    {
+      "questions": [
+        {
+          "question": "question text",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "correct option text"
+        }
+      ]
+    }`;
+  
+    return await generateWithGemini(prompt);
+}
+
+/**
  * Evaluate student level based on test results
  * @param {Array} questions - Array of question objects with studentAnswer
  * @param {number} score - Student's score percentage
@@ -92,7 +150,8 @@ Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations
 
 {
   "level": "beginner" | "intermediate" | "advanced",
-  "reasoning": "brief explanation of classification"
+  "reasoning": "brief explanation of classification",
+  "weakAreas": ["topic1", "topic2"]
 }
 
 Classification criteria:
@@ -100,171 +159,60 @@ Classification criteria:
 - intermediate: 41-70% score
 - advanced: 71-100% score
 
-Also consider the types of questions they got correct/wrong.`;
+Also identify 2-3 weak areas based on incorrect answers.`;
 
   return await generateWithGemini(prompt);
 }
 
 /**
- * Generate level-based test
- * @param {string} level - Student's current level (beginner/intermediate/advanced)
- * @returns {Promise<Object>} - Test questions
+ * Generate level-based test questions
+ * @param {string} level - Student level
+ * @returns {Promise<Object>} - Test questions in JSON format
  */
 export async function generateLevelBasedTest(level) {
-  const difficultyMap = {
-    beginner: 'easy',
-    intermediate: 'moderate',
-    advanced: 'hard'
-  };
-
-  const difficulty = difficultyMap[level] || 'moderate';
-
-  const prompt = `Generate a ${difficulty} level test with 10 multiple-choice questions for a ${level} student.
-
-Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations:
-
-{
-  "questions": [
+    const prompt = `Generate a practice test with 10 multiple-choice questions suitable for a "${level}" level student.
+  
+    Return ONLY a JSON object in this EXACT format with NO markdown:
+  
     {
-      "question": "question text here",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correctAnswer": "exact text of correct option"
-    }
-  ]
-}
-
-The questions should be appropriate for ${level} level students.
-Include varied topics: math, reasoning, general knowledge, problem-solving.
-
-Make sure the JSON is valid and parseable.`;
-
-  return await generateWithGemini(prompt);
-}
+      "questions": [
+        {
+          "question": "question text",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "correct option text"
+        }
+      ]
+    }`;
+  
+    return await generateWithGemini(prompt);
+  }
 
 /**
- * Generate adaptive mock test with 15 questions (5 easy, 5 medium, 5 advanced)
- * Subject: Python
- * @returns {Promise<Object>} - Mock test questions with levels
+ * Generate a comprehensive mock test with mixed difficulty
+ * @returns {Promise<Object>} - Mock test questions
  */
 export async function generateMockTest() {
-  const prompt = `Generate a Python programming mock test with EXACTLY 15 unique multiple-choice questions.
-
-The questions MUST be distributed as follows:
-- 5 EASY level questions (Python basics, syntax, variables, basic control flow)
-- 5 MEDIUM level questions (OOP basics, data structures, modules, file handling)
-- 5 ADVANCED level questions (decorators, generators, async/await, performance optimization)
-
-Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations:
-
-{
-  "questions": [
+    const prompt = `Generate a comprehensive mock test with 15 multiple-choice questions.
+    
+    Structure:
+    - 5 Beginner level questions
+    - 5 Intermediate level questions
+    - 5 Advanced level questions
+    
+    Cover general knowledge, logic, and basic science.
+    
+    Return ONLY a JSON object in this EXACT format with NO markdown:
+    
     {
-      "question": "question text here",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correctAnswer": "exact text of correct option",
-      "level": "easy"
-    },
-    {
-      "question": "question text here",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correctAnswer": "exact text of correct option",
-      "level": "medium"
-    },
-    {
-      "question": "question text here",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correctAnswer": "exact text of correct option",
-      "level": "advanced"
-    }
-  ]
-}
-
-IMPORTANT:
-- Generate UNIQUE questions every time
-- Each question must have EXACTLY 4 options
-- The correctAnswer must EXACTLY match one of the options
-- Include the "level" field for each question
-- Make the questions practical and relevant to Python programming
-- Total questions = 15 (5 easy + 5 medium + 5 advanced)`;
-
-  return await generateWithGemini(prompt);
-}
-
-/**
- * Generate learning path based on student level for Python
- * @param {string} level - Current student level (easy/medium/advanced)
- * @returns {Promise<Object>} - Learning path with lessons
- */
-export async function generateLearningPath(level) {
-  const curriculumGuide = {
-    easy: 'Python basics: variables, data types, operators, control flow (if/else, loops), functions, basic string operations',
-    medium: 'Object-Oriented Programming (classes, objects, inheritance), data structures (lists, dictionaries, sets, tuples), modules and packages, file I/O, exception handling',
-    advanced: 'Advanced concepts: decorators, generators, context managers, asyncio and async/await, metaclasses, performance optimization, design patterns'
-  };
-
-  const curriculum = curriculumGuide[level] || curriculumGuide.medium;
-
-  const prompt = `Generate a structured learning path for a ${level} level Python programming student.
-
-Focus on: ${curriculum}
-
-Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations:
-
-{
-  "level": "${level}",
-  "lessons": [
-    {
-      "lessonId": "unique-lesson-id-1",
-      "title": "Lesson title",
-      "description": "Brief description of what this lesson covers",
-      "content": "Detailed lesson content with examples and explanations",
-      "completed": false
-    }
-  ]
-}
-
-IMPORTANT:
-- Generate 6-8 lessons appropriate for ${level} level
-- Each lessonId should be unique and kebab-case (e.g., "python-variables-basics")
-- Lessons should build on each other progressively
-- Include practical Python code examples in the content
-- Make descriptions concise but informative
-- Content should be comprehensive enough to learn the topic`;
-
-  return await generateWithGemini(prompt);
-}
-
-/**
- * Generate lesson-specific test
- * @param {string} lessonId - Lesson identifier
- * @param {string} lessonTitle - Lesson title
- * @param {string} level - Student level (easy/medium/advanced)
- * @returns {Promise<Object>} - Lesson test questions
- */
-export async function generateLessonTest(lessonId, lessonTitle, level) {
-  const prompt = `Generate a test for the Python lesson: "${lessonTitle}" (Level: ${level})
-
-The test should have 5 multiple-choice questions specifically about this lesson topic.
-
-Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations:
-
-{
-  "lessonId": "${lessonId}",
-  "questions": [
-    {
-      "question": "question text here",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correctAnswer": "exact text of correct option"
-    }
-  ]
-}
-
-IMPORTANT:
-- Generate EXACTLY 5 questions
-- Questions should be focused on the lesson topic
-- Difficulty should match the ${level} level
-- Each question must have EXACTLY 4 options
-- The correctAnswer must EXACTLY match one of the options`;
-
-  return await generateWithGemini(prompt);
+      "questions": [
+        {
+          "question": "question text",
+          "options": ["A", "B", "C", "D"],
+          "correctAnswer": "correct option text",
+          "level": "beginner|intermediate|advanced"
+        }
+      ]
+    }`;
+  
+    return await generateWithGemini(prompt);
 }

@@ -13,7 +13,7 @@ import { db } from '../firebase';
  */
 export async function getStudentProgress(userId, subject = "Python") {
     try {
-        const progressRef = doc(db, 'studentProgress', userId);
+        const progressRef = doc(db, 'users', userId, 'student_progress', 'main');
         const progressSnap = await getDoc(progressRef);
 
         if (progressSnap.exists()) {
@@ -39,7 +39,7 @@ export async function getStudentProgress(userId, subject = "Python") {
  */
 export async function initializeStudentProgress(userId, level, lessons = []) {
     try {
-        const progressRef = doc(db, 'studentProgress', userId);
+        const progressRef = doc(db, 'users', userId, 'student_progress', 'main');
         await setDoc(progressRef, {
             subject: "Python",
             currentLevel: level,
@@ -61,7 +61,7 @@ export async function initializeStudentProgress(userId, level, lessons = []) {
  */
 export async function updateStudentProgress(userId, updates) {
     try {
-        const progressRef = doc(db, 'studentProgress', userId);
+        const progressRef = doc(db, 'users', userId, 'student_progress', 'main');
         await updateDoc(progressRef, {
             ...updates,
             lastUpdated: serverTimestamp()
@@ -336,38 +336,49 @@ export async function updateMockTestAnalytics(userId, easyScore, mediumScore, ad
  */
 export async function getAllStudentsProgress() {
     try {
-        const progressSnapshot = await getDocs(collection(db, 'studentProgress'));
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-
-        // Create a map of user data
-        const usersMap = {};
-        usersSnapshot.forEach(doc => {
-            const userData = doc.data();
-            if (userData.role === 'student') {
-                usersMap[doc.id] = userData;
+        // Get all students first
+        const usersQuery = query(collection(db, 'users'), where('role', '==', 'student'));
+        const usersSnapshot = await getDocs(usersQuery);
+        
+        // Fetch progress for each student
+        const progressPromises = usersSnapshot.docs.map(async (userDoc) => {
+            const userData = userDoc.data();
+            const userId = userDoc.id;
+            
+            try {
+                // Get progress from subcollection
+                const progressRef = doc(db, 'users', userId, 'student_progress', 'main');
+                const progressSnap = await getDoc(progressRef);
+                
+                if (progressSnap.exists()) {
+                    const progressData = progressSnap.data();
+                    return {
+                        userId,
+                        fullName: userData.fullName,
+                        email: userData.email,
+                        currentLevel: progressData.currentLevel,
+                        progressPercentage: progressData.progressPercentage,
+                        lessonsCompleted: progressData.lessons?.filter(l => l.completed).length || 0,
+                        totalLessons: progressData.lessons?.length || 0
+                    };
+                }
+            } catch (err) {
+                console.warn(`Could not fetch progress for user ${userId}`, err);
             }
+            
+            // Return student with default/empty progress if not found or error
+            return {
+                userId,
+                fullName: userData.fullName,
+                email: userData.email,
+                currentLevel: 'Not Started',
+                progressPercentage: 0,
+                lessonsCompleted: 0,
+                totalLessons: 0
+            };
         });
-
-        // Combine progress with user data
-        const studentsData = [];
-        progressSnapshot.forEach(doc => {
-            const progressData = doc.data();
-            const userId = doc.id;
-            const userData = usersMap[userId];
-
-            if (userData) {
-                studentsData.push({
-                    userId,
-                    fullName: userData.fullName,
-                    email: userData.email,
-                    currentLevel: progressData.currentLevel,
-                    progressPercentage: progressData.progressPercentage,
-                    lessonsCompleted: progressData.lessons?.filter(l => l.completed).length || 0,
-                    totalLessons: progressData.lessons?.length || 0
-                });
-            }
-        });
-
+        
+        const studentsData = await Promise.all(progressPromises);
         return studentsData;
     } catch (error) {
         console.error('Error fetching all students progress:', error);

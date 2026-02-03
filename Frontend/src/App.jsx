@@ -7,6 +7,7 @@ import StudentDashboard from './pages/StudentDashboard';
 import TeacherDashboard from './pages/TeacherDashboard';
 import StudentLearning from './pages/StudentLearning';
 import StudentTest from './pages/StudentTest';
+import StudentMockTest from './pages/StudentMockTest';
 
 function App() {
   return (
@@ -49,6 +50,14 @@ function App() {
             element={
               <RoleBasedRoute allowedRole="student">
                 <StudentTest />
+              </RoleBasedRoute>
+            }
+          />
+          <Route
+            path="/student/mock-test"
+            element={
+              <RoleBasedRoute allowedRole="student">
+                <StudentMockTest />
               </RoleBasedRoute>
             }
           />

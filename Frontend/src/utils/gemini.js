@@ -140,3 +140,131 @@ Make sure the JSON is valid and parseable.`;
 
   return await generateWithGemini(prompt);
 }
+
+/**
+ * Generate adaptive mock test with 15 questions (5 easy, 5 medium, 5 advanced)
+ * Subject: Python
+ * @returns {Promise<Object>} - Mock test questions with levels
+ */
+export async function generateMockTest() {
+  const prompt = `Generate a Python programming mock test with EXACTLY 15 unique multiple-choice questions.
+
+The questions MUST be distributed as follows:
+- 5 EASY level questions (Python basics, syntax, variables, basic control flow)
+- 5 MEDIUM level questions (OOP basics, data structures, modules, file handling)
+- 5 ADVANCED level questions (decorators, generators, async/await, performance optimization)
+
+Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations:
+
+{
+  "questions": [
+    {
+      "question": "question text here",
+      "options": ["option A", "option B", "option C", "option D"],
+      "correctAnswer": "exact text of correct option",
+      "level": "easy"
+    },
+    {
+      "question": "question text here",
+      "options": ["option A", "option B", "option C", "option D"],
+      "correctAnswer": "exact text of correct option",
+      "level": "medium"
+    },
+    {
+      "question": "question text here",
+      "options": ["option A", "option B", "option C", "option D"],
+      "correctAnswer": "exact text of correct option",
+      "level": "advanced"
+    }
+  ]
+}
+
+IMPORTANT:
+- Generate UNIQUE questions every time
+- Each question must have EXACTLY 4 options
+- The correctAnswer must EXACTLY match one of the options
+- Include the "level" field for each question
+- Make the questions practical and relevant to Python programming
+- Total questions = 15 (5 easy + 5 medium + 5 advanced)`;
+
+  return await generateWithGemini(prompt);
+}
+
+/**
+ * Generate learning path based on student level for Python
+ * @param {string} level - Current student level (easy/medium/advanced)
+ * @returns {Promise<Object>} - Learning path with lessons
+ */
+export async function generateLearningPath(level) {
+  const curriculumGuide = {
+    easy: 'Python basics: variables, data types, operators, control flow (if/else, loops), functions, basic string operations',
+    medium: 'Object-Oriented Programming (classes, objects, inheritance), data structures (lists, dictionaries, sets, tuples), modules and packages, file I/O, exception handling',
+    advanced: 'Advanced concepts: decorators, generators, context managers, asyncio and async/await, metaclasses, performance optimization, design patterns'
+  };
+
+  const curriculum = curriculumGuide[level] || curriculumGuide.medium;
+
+  const prompt = `Generate a structured learning path for a ${level} level Python programming student.
+
+Focus on: ${curriculum}
+
+Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations:
+
+{
+  "level": "${level}",
+  "lessons": [
+    {
+      "lessonId": "unique-lesson-id-1",
+      "title": "Lesson title",
+      "description": "Brief description of what this lesson covers",
+      "content": "Detailed lesson content with examples and explanations",
+      "completed": false
+    }
+  ]
+}
+
+IMPORTANT:
+- Generate 6-8 lessons appropriate for ${level} level
+- Each lessonId should be unique and kebab-case (e.g., "python-variables-basics")
+- Lessons should build on each other progressively
+- Include practical Python code examples in the content
+- Make descriptions concise but informative
+- Content should be comprehensive enough to learn the topic`;
+
+  return await generateWithGemini(prompt);
+}
+
+/**
+ * Generate lesson-specific test
+ * @param {string} lessonId - Lesson identifier
+ * @param {string} lessonTitle - Lesson title
+ * @param {string} level - Student level (easy/medium/advanced)
+ * @returns {Promise<Object>} - Lesson test questions
+ */
+export async function generateLessonTest(lessonId, lessonTitle, level) {
+  const prompt = `Generate a test for the Python lesson: "${lessonTitle}" (Level: ${level})
+
+The test should have 5 multiple-choice questions specifically about this lesson topic.
+
+Return ONLY a JSON object in this EXACT format with NO markdown, NO explanations:
+
+{
+  "lessonId": "${lessonId}",
+  "questions": [
+    {
+      "question": "question text here",
+      "options": ["option A", "option B", "option C", "option D"],
+      "correctAnswer": "exact text of correct option"
+    }
+  ]
+}
+
+IMPORTANT:
+- Generate EXACTLY 5 questions
+- Questions should be focused on the lesson topic
+- Difficulty should match the ${level} level
+- Each question must have EXACTLY 4 options
+- The correctAnswer must EXACTLY match one of the options`;
+
+  return await generateWithGemini(prompt);
+}

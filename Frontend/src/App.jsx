@@ -1,35 +1,64 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './components/AuthContext';
+import RoleBasedRoute from './components/RoleBasedRoute';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import StudentDashboard from './pages/StudentDashboard';
+import TeacherDashboard from './pages/TeacherDashboard';
+import StudentLearning from './pages/StudentLearning';
+import StudentTest from './pages/StudentTest';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <Router>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+
+          {/* Role-based dashboard routes */}
+          <Route
+            path="/dashboard/student"
+            element={
+              <RoleBasedRoute allowedRole="student">
+                <StudentDashboard />
+              </RoleBasedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/teacher"
+            element={
+              <RoleBasedRoute allowedRole="teacher">
+                <TeacherDashboard />
+              </RoleBasedRoute>
+            }
+          />
+
+          {/* Student-specific routes */}
+          <Route
+            path="/student/learning"
+            element={
+              <RoleBasedRoute allowedRole="student">
+                <StudentLearning />
+              </RoleBasedRoute>
+            }
+          />
+          <Route
+            path="/student/test"
+            element={
+              <RoleBasedRoute allowedRole="student">
+                <StudentTest />
+              </RoleBasedRoute>
+            }
+          />
+
+          {/* Fallback for old /dashboard route */}
+          <Route path="/dashboard" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </AuthProvider>
+    </Router>
+  );
 }
 
-export default App
+export default App;

@@ -64,89 +64,103 @@ function Register() {
     };
 
     return (
-        <div style={{ padding: '20px', maxWidth: '400px', margin: '50px auto' }}>
-            <h2>Register</h2>
-            {error && <p style={{ color: 'red' }}>{error}</p>}
-            <form onSubmit={handleSubmit}>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>
-                        Full Name:
-                        <br />
+        <div className="container" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem 1rem' }}>
+            <div className="card" style={{ width: '100%', maxWidth: '500px' }}>
+                <h2 style={{ textAlign: 'center', marginBottom: '1.5rem', color: 'var(--color-primary)' }}>Create Account</h2>
+                
+                {error && (
+                    <div style={{ 
+                        backgroundColor: '#FEF2F2', 
+                        color: 'var(--color-error)', 
+                        padding: '0.75rem', 
+                        borderRadius: 'var(--radius-md)', 
+                        marginBottom: '1rem',
+                        fontSize: 'var(--text-sm)'
+                    }}>
+                        {error}
+                    </div>
+                )}
+                
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label htmlFor="fullName">Full Name</label>
                         <input
+                            id="fullName"
                             type="text"
                             value={fullName}
                             onChange={(e) => setFullName(e.target.value)}
                             required
-                            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                            placeholder="John Doe"
                         />
-                    </label>
-                </div>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>
-                        Email:
-                        <br />
+                    </div>
+
+                    <div className="form-group">
+                        <label htmlFor="email">Email Address</label>
                         <input
+                            id="email"
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
-                            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                            placeholder="you@example.com"
                         />
-                    </label>
-                </div>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>
-                        Password:
-                        <br />
+                    </div>
+
+                    <div className="form-group">
+                        <label htmlFor="role">I am a...</label>
+                        <select
+                            id="role"
+                            value={role}
+                            onChange={(e) => setRole(e.target.value)}
+                            required
+                        >
+                            <option value="">Select Role</option>
+                            <option value="student">Student</option>
+                            <option value="teacher">Teacher</option>
+                        </select>
+                    </div>
+
+                    <div className="form-group">
+                        <label htmlFor="password">Password</label>
                         <input
+                            id="password"
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
-                            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                            placeholder="Min. 6 characters"
                         />
-                    </label>
-                </div>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>
-                        Confirm Password:
-                        <br />
+                    </div>
+
+                    <div className="form-group">
+                        <label htmlFor="confirmPassword">Confirm Password</label>
                         <input
+                            id="confirmPassword"
                             type="password"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             required
-                            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                            placeholder="Re-enter password"
                         />
-                    </label>
+                    </div>
+
+                    <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={loading}
+                        style={{ width: '100%', marginTop: '0.5rem' }}
+                    >
+                        {loading ? 'Creating Account...' : 'Register'}
+                    </button>
+                </form>
+
+                <div style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: 'var(--text-sm)' }}>
+                    <p>
+                        Already have an account?{' '}
+                        <Link to="/login" style={{ fontWeight: '600' }}>Login here</Link>
+                    </p>
                 </div>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>
-                        Role:
-                        <br />
-                        <select
-                            value={role}
-                            onChange={(e) => setRole(e.target.value)}
-                            required
-                            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
-                        >
-                            <option value="">-- Select Role --</option>
-                            <option value="student">Student</option>
-                            <option value="teacher">Teacher</option>
-                        </select>
-                    </label>
-                </div>
-                <button
-                    type="submit"
-                    disabled={loading}
-                    style={{ padding: '10px 20px', cursor: loading ? 'not-allowed' : 'pointer' }}
-                >
-                    {loading ? 'Registering...' : 'Register'}
-                </button>
-            </form>
-            <p style={{ marginTop: '15px' }}>
-                Already have an account? <Link to="/login">Login here</Link>
-            </p>
+            </div>
         </div>
     );
 }

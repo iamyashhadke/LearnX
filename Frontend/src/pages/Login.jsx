@@ -46,47 +46,65 @@ function Login() {
     };
 
     return (
-        <div style={{ padding: '20px', maxWidth: '400px', margin: '50px auto' }}>
-            <h2>Login</h2>
-            {error && <p style={{ color: 'red' }}>{error}</p>}
-            <form onSubmit={handleSubmit}>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>
-                        Email:
-                        <br />
+        <div className="container" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="card" style={{ width: '100%', maxWidth: '400px' }}>
+                <h2 style={{ textAlign: 'center', marginBottom: '1.5rem', color: 'var(--color-primary)' }}>Welcome Back</h2>
+                
+                {error && (
+                    <div style={{ 
+                        backgroundColor: '#FEF2F2', 
+                        color: 'var(--color-error)', 
+                        padding: '0.75rem', 
+                        borderRadius: 'var(--radius-md)', 
+                        marginBottom: '1rem',
+                        fontSize: 'var(--text-sm)'
+                    }}>
+                        {error}
+                    </div>
+                )}
+                
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label htmlFor="email">Email Address</label>
                         <input
+                            id="email"
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
-                            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                            placeholder="you@example.com"
                         />
-                    </label>
-                </div>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>
-                        Password:
-                        <br />
+                    </div>
+                    
+                    <div className="form-group">
+                        <label htmlFor="password">Password</label>
                         <input
+                            id="password"
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
-                            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                            placeholder="••••••••"
                         />
-                    </label>
+                    </div>
+                    
+                    <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={loading}
+                        style={{ width: '100%', marginTop: '0.5rem' }}
+                    >
+                        {loading ? 'Signing in...' : 'Sign In'}
+                    </button>
+                </form>
+                
+                <div style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: 'var(--text-sm)' }}>
+                    <p>
+                        Don't have an account?{' '}
+                        <Link to="/register" style={{ fontWeight: '600' }}>Create account</Link>
+                    </p>
                 </div>
-                <button
-                    type="submit"
-                    disabled={loading}
-                    style={{ padding: '10px 20px', cursor: loading ? 'not-allowed' : 'pointer' }}
-                >
-                    {loading ? 'Logging in...' : 'Login'}
-                </button>
-            </form>
-            <p style={{ marginTop: '15px' }}>
-                Don't have an account? <Link to="/register">Register here</Link>
-            </p>
+            </div>
         </div>
     );
 }
